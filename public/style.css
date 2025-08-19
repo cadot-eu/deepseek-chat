@@ -1,3 +1,13 @@
+/* Lighten bot message background */
+.message.bot .message-content {
+    background: #f3f4f6;
+    color: #222;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
 #history-panel {
     margin-top: 2rem;
     background: #1e293b;

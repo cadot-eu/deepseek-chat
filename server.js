@@ -1,3 +1,23 @@
+const fs = require('fs');
+const path = require('path');
+const HISTORY_PATH = path.join(__dirname, 'history.json');
+// Met à jour une entrée de l'historique
+app.put('/api/history/:idx', async (req, res) => {
+    const idx = parseInt(req.params.idx, 10);
+    const newItem = req.body;
+    try {
+        const history = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
+        if (Array.isArray(history) && history[idx]) {
+            history[idx] = newItem;
+            fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf8');
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'Entrée non trouvée.' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: 'Erreur serveur.' });
+    }
+});
 import express from 'express';
 import dotenv from 'dotenv';
 import multer from 'multer';
@@ -113,18 +133,40 @@ app.delete('/api/prompts/:index', (req, res) => {
 
 // Envoyer un message au bot
 app.post('/api/chat', async (req, res) => {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'Message manquant.' });
+    // Accept DeepSeek official payload: model, messages, stream
+    const { model, messages, stream } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'Messages manquants.' });
+    }
     try {
-        const completion = await openai.chat.completions.create({
-            messages: [
-                { role: "system", content: "You are a helpful assistant." },
-                { role: "user", content: message }
-            ],
-            model: "deepseek-chat"
-        });
-        const botReply = completion.choices?.[0]?.message?.content || "Réponse indisponible.";
-        history.push({ user: message, bot: botReply });
+        // Forward the payload to DeepSeek API
+        let botReply = "";
+        if (stream) {
+            // Streaming mode: accumulate chunks
+            const streamRes = await openai.chat.completions.create({
+                model: model || "deepseek-chat",
+                messages,
+                stream: true
+            });
+            // DeepSeek's SDK returns an async iterator for streaming
+            for await (const chunk of streamRes) {
+                const content = chunk.choices?.[0]?.delta?.content;
+                if (content) botReply += content;
+            }
+        } else {
+            // Non-streaming mode
+            const completion = await openai.chat.completions.create({
+                model: model || "deepseek-chat",
+                messages,
+                stream: false
+            });
+            botReply = completion.choices?.[0]?.message?.content || "Réponse indisponible.";
+        }
+        // Append only the latest round (user + botReply) to history.json
+        const lastUserMsg = messages.filter(m => m.role === 'user').pop();
+        if (lastUserMsg) {
+            history.push({ user: lastUserMsg.content, bot: botReply });
+        }
         try {
             fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
         } catch (e) {

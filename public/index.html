@@ -4,35 +4,53 @@
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>DeepSeek Chat</title>
+		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 		<link rel="stylesheet" href="style.css">
 	</head>
-	<body>
-		<div id="status-indicator"></div>
-		<div id="app">
-			<aside id="prompts-panel">
-				<h2>Prompts</h2>
-				<ul id="prompts-list"></ul>
-				<input type="text" id="new-prompt" placeholder="Ajouter un prompt...">
-				<button id="add-prompt">Ajouter</button>
-				<div id="history-panel">
-					<h2>Historique</h2>
-					<ul id="history-list"></ul>
+	<body class="bg-light">
+		<div id="status-indicator" class="container mt-2"></div>
+		<div class="container py-3">
+			<div class="row">
+				<div class="col-12 col-md-4 mb-3">
+					<div class="card">
+						<div class="card-header d-flex justify-content-between align-items-center">
+							<span>Prompts</span>
+							<button id="add-prompt" class="btn btn-sm btn-primary">Ajouter</button>
+						</div>
+						<div class="card-body">
+							<ul id="prompts-list" class="list-group mb-2"></ul>
+							<input type="text" id="new-prompt" class="form-control" placeholder="Ajouter un prompt...">
+						</div>
+					</div>
+					<div class="card mt-3">
+						<div class="card-header">Historique</div>
+						<div class="card-body">
+							<ul id="history-list" class="list-group"></ul>
+						</div>
+					</div>
 				</div>
-			</aside>
-			<main id="chat-panel">
-				<header>
-					<h1>DeepSeek Chat</h1>
-				</header>
-				<section id="history" style="display:none"></section>
-				<form id="chat-form">
-					<input type="text" id="message" placeholder="Votre message..." autocomplete="off" required>
-					<input type="file" id="file-upload" style="display:none">
-					<button type="button" id="attach-btn">📎</button>
-					<button type="submit">Envoyer</button>
-				</form>
-			</main>
+				<div class="col-12 col-md-8">
+					<div class="card">
+						<div class="card-header text-center">
+							<h1 class="h4 mb-0">DeepSeek Chat</h1>
+						</div>
+						<div class="card-body" style="min-height: 400px;">
+							<section id="history" style="display:none"></section>
+						</div>
+						<div class="card-footer">
+							<form id="chat-form" class="d-flex gap-2">
+								<input type="text" id="message" class="form-control" placeholder="Votre message..." autocomplete="off" required>
+								<input type="file" id="file-upload" style="display:none">
+								<button type="button" id="attach-btn" class="btn btn-outline-secondary">📎</button>
+								<button type="submit" class="btn btn-primary">Envoyer</button>
+							</form>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
-		 <script src="marked.min.js"></script>
+		 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+	 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 		 <script src="app.js"></script>
 	</body>
 </html>

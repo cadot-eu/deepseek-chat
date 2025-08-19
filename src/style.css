@@ -1,0 +1,23 @@
+/* Bootstrap CSS importé via npm pour Vite */
+@import "bootstrap/dist/css/bootstrap.min.css";
+
+/* Ajoute ici tes styles personnalisés */
+body.bg-light {
+    background: #f8fafc;
+}
+.message.user {
+    background: #e0f2fe;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+}
+.message.bot {
+    background: #f1f5f9;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+}
+#history {
+    max-height: 400px;
+    overflow-y: auto;
+}
