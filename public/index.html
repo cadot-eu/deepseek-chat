@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="status-indicator"></div>
+  <div id="app">
+    <aside id="prompts-panel">
+      <h2>Prompts</h2>
+      <ul id="prompts-list"></ul>
+      <input type="text" id="new-prompt" placeholder="Ajouter un prompt...">
+      <button id="add-prompt">Ajouter</button>
+      <div id="history-panel">
+        <h2>Historique</h2>
+        <ul id="history-list"></ul>
+      </div>
+    </aside>
+    <main id="chat-panel">
+      <header>
+        <h1>DeepSeek Chat</h1>
+      </header>
+      <section id="history" style="display:none"></section>
+      <form id="chat-form">
+        <input type="text" id="message" placeholder="Votre message..." autocomplete="off" required>
+        <input type="file" id="file-upload" style="display:none">
+        <button type="button" id="attach-btn">📎</button>
+        <button type="submit">Envoyer</button>
+      </form>
+    </main>
+  </div>
+  <script src="marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
