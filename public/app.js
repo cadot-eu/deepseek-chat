@@ -17,6 +17,7 @@ async function fetchPrompts() {
 
 let SYSTEM_PROMPT = "Réponds-moi en français, sois concis et limite chaque explication à une seule phrase simple. Donne-moi uniquement l'essentiel, sans détails inutiles.";
 let recentMessages = [];
+let conversationSummary = '';
 const MAX_TOKENS = 3000; // For future use if needed
 const MAX_RECENT = 15;
 const SUMMARY_CHUNK = 10;
@@ -54,83 +55,29 @@ function createSummary(messages) {
 }
 
 async function sendMessage(message) {
-    // Always start with the system prompt for context caching
-    const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...recentMessages,
-        { role: 'user', content: message }
-    ];
-    // Détermine le titre (première question user)
-    let title = '';
-    if (messages.length > 1) {
-        const firstUser = messages.find(m => m.role === 'user');
-        title = firstUser ? firstUser.content : '';
-    }
-    // Log what is sent à DeepSeek
-    console.log('Envoi à DeepSeek:', {
-        question: message,
-        messages: messages,
-        selectedHistoryIdx,
-        title
-    });
+    // Envoie le message à l'API DeepSeek
     const discussionId = getDiscussionIdFromUrl();
-    const payload = { question: message, messages, title };
-    if (discussionId) {
-        payload.discussionId = discussionId;
-    }
-    const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    // After sending, update local recentMessages
-    recentMessages.push({ role: 'user', content: message });
-    if (res.ok) {
-        const data = await res.json();
-        if (data.reply) {
-            recentMessages.push({ role: 'assistant', content: data.reply });
-            // Met à jour l'historique local en utilisant l'id de l'URL
-            const discussionId = getDiscussionIdFromUrl();
-            if (discussionId && Array.isArray(history)) {
-                const entry = history.find(h => h.id === discussionId);
-                if (entry) {
-                    entry.messages.push({ role: 'user', content: message });
-                    entry.messages.push({ role: 'assistant', content: data.reply });
-                    entry.date = new Date().toISOString();
-                }
-            }
-            manageContext();
+    const payload = {
+        model: "deepseek-chat",
+        messages: buildContext().concat([{ role: "user", content: message }]),
+        discussionId: discussionId || undefined,
+        selectedHistoryIdx: selectedHistoryIdx
+    };
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({}));
+            return { error: error.error || 'Erreur API.' };
         }
-        return data;
-    } else {
-        return { error: 'Erreur API.' };
+        return await res.json();
+    } catch (err) {
+        return { error: 'Erreur de connexion.' };
     }
 }
-async function uploadFile(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-    });
-    return res.json();
-}
-
-// UI
-const historyEl = document.getElementById('history');
-
-// Charge l'historique au démarrage
-window.addEventListener('DOMContentLoaded', async () => {
-    const historyData = await fetchHistory();
-    if (Array.isArray(historyData)) {
-        history = historyData;
-        historyList.style.display = '';
-        renderHistory(history);
-    } else {
-        historyList.style.display = '';
-        renderHistory([]);
-    }
-});
 function getDiscussionIdFromUrl() {
     const url = new URL(window.location.href);
     return url.searchParams.get('discussion');
@@ -145,6 +92,9 @@ function showChatIfId() {
 }
 
 window.addEventListener('DOMContentLoaded', showChatIfId);
+window.addEventListener('DOMContentLoaded', () => {
+    historyEl.style.display = 'block';
+});
 window.addEventListener('popstate', showChatIfId);
 const chatPanel = document.getElementById('chat-panel');
 const historyList = document.getElementById('history-list');
@@ -156,6 +106,7 @@ const promptsList = document.getElementById('prompts-list');
 const newPromptInput = document.getElementById('new-prompt');
 const addPromptBtn = document.getElementById('add-prompt');
 const statusIndicator = document.getElementById('status-indicator');
+const historyEl = document.getElementById('history');
 
 let selectedFile = null;
 let selectedHistoryIdx = null; // index de la discussion sélectionnée
@@ -290,39 +241,6 @@ function showDiscussion(item) {
         historyEl.appendChild(botMsg);
     }
     scrollHistoryToBottom();
-    sep.style.display = 'flex';
-    sep.style.alignItems = 'center';
-    sep.style.justifyContent = 'center';
-    sep.innerHTML = '<hr style="width:80%;border:1px dashed #38bdf8;">';
-    historyEl.appendChild(sep);
-
-    let resumeBtn = document.getElementById('resume-btn');
-    if (resumeBtn) resumeBtn.remove();
-    resumeBtn = document.createElement('button');
-    resumeBtn.id = 'resume-btn';
-    resumeBtn.textContent = 'Reprendre la discussion';
-    resumeBtn.style.margin = '1rem 0';
-    resumeBtn.style.background = '#38bdf8';
-    resumeBtn.style.color = '#fff';
-    resumeBtn.style.border = 'none';
-    resumeBtn.style.borderRadius = '8px';
-    resumeBtn.style.padding = '0.5rem 1.2rem';
-    resumeBtn.style.cursor = 'pointer';
-    resumeBtn.style.fontWeight = 'bold';
-    resumeBtn.style.boxShadow = '0 2px 8px #38bdf888';
-    resumeBtn.onclick = () => {
-        messageInput.value = '';
-        messageInput.placeholder = 'Reprendre la discussion…';
-        messageInput.focus();
-        recentMessages = item.messages && Array.isArray(item.messages)
-            ? item.messages.slice()
-            : [
-                { role: 'user', content: item.user },
-                { role: 'assistant', content: item.bot }
-            ];
-        historyEl.scrollTop = historyEl.scrollHeight;
-    };
-    historyEl.appendChild(resumeBtn);
 }
 
 async function deleteHistory(idx) {
@@ -396,14 +314,12 @@ chatForm.onsubmit = async (e) => {
             setStatus('Réponse reçue');
             statusIndicator.style.display = 'block';
             historyEl.style.display = 'block';
-            const userMsg = document.createElement('div');
-            userMsg.className = 'message user';
-            userMsg.innerHTML = `<div class=\"message-content\">${escapeHtml(msg)}`;
-            historyEl.appendChild(userMsg);
-            const botMsg = document.createElement('div');
-            botMsg.className = 'message bot';
-            botMsg.innerHTML = `<div class=\"message-content\">${safeMarkdownParse(res.reply)}`;
-            historyEl.appendChild(botMsg);
+            // Ajoute à l'historique local pour buildContext
+            recentMessages.push({ role: 'user', content: msg });
+            recentMessages.push({ role: 'assistant', content: res.reply });
+            // Affiche le message dans l'historique, même si aucune discussion n'est sélectionnée
+            historyEl.innerHTML += `<div class="message user"><div class="message-content">${escapeHtml(msg)}</div></div>`;
+            historyEl.innerHTML += `<div class="message bot"><div class="message-content">${safeMarkdownParse(res.reply)}</div></div>`;
             scrollHistoryToBottom();
             // Ajoute la question/réponse à la discussion sélectionnée si existante
             if (selectedHistoryIdx !== null) {
