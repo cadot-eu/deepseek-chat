@@ -60,19 +60,28 @@ async function sendMessage(message) {
         ...recentMessages,
         { role: 'user', content: message }
     ];
-    // Log what is sent to DeepSeek
+    // Détermine le titre (première question user)
+    let title = '';
+    if (messages.length > 1) {
+        const firstUser = messages.find(m => m.role === 'user');
+        title = firstUser ? firstUser.content : '';
+    }
+    // Log what is sent à DeepSeek
     console.log('Envoi à DeepSeek:', {
         question: message,
-        messages: messages
+        messages: messages,
+        selectedHistoryIdx,
+        title
     });
+    const discussionId = getDiscussionIdFromUrl();
+    const payload = { question: message, messages, title };
+    if (discussionId) {
+        payload.discussionId = discussionId;
+    }
     const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: 'deepseek-chat',
-            messages: messages,
-            stream: true
-        })
+        body: JSON.stringify(payload)
     });
     // After sending, update local recentMessages
     recentMessages.push({ role: 'user', content: message });
@@ -80,6 +89,16 @@ async function sendMessage(message) {
         const data = await res.json();
         if (data.reply) {
             recentMessages.push({ role: 'assistant', content: data.reply });
+            // Met à jour l'historique local en utilisant l'id de l'URL
+            const discussionId = getDiscussionIdFromUrl();
+            if (discussionId && Array.isArray(history)) {
+                const entry = history.find(h => h.id === discussionId);
+                if (entry) {
+                    entry.messages.push({ role: 'user', content: message });
+                    entry.messages.push({ role: 'assistant', content: data.reply });
+                    entry.date = new Date().toISOString();
+                }
+            }
             manageContext();
         }
         return data;
@@ -99,6 +118,34 @@ async function uploadFile(file) {
 
 // UI
 const historyEl = document.getElementById('history');
+
+// Charge l'historique au démarrage
+window.addEventListener('DOMContentLoaded', async () => {
+    const historyData = await fetchHistory();
+    if (Array.isArray(historyData)) {
+        history = historyData;
+        historyList.style.display = '';
+        renderHistory(history);
+    } else {
+        historyList.style.display = '';
+        renderHistory([]);
+    }
+});
+function getDiscussionIdFromUrl() {
+    const url = new URL(window.location.href);
+    return url.searchParams.get('discussion');
+}
+
+function showChatIfId() {
+    const id = getDiscussionIdFromUrl();
+    const chatPanel = document.getElementById('chat-panel');
+    if (chatPanel) {
+        chatPanel.style.display = id ? '' : 'none';
+    }
+}
+
+window.addEventListener('DOMContentLoaded', showChatIfId);
+window.addEventListener('popstate', showChatIfId);
 const chatPanel = document.getElementById('chat-panel');
 const historyList = document.getElementById('history-list');
 const chatForm = document.getElementById('chat-form');
@@ -115,16 +162,63 @@ let selectedHistoryIdx = null; // index de la discussion sélectionnée
 
 function renderHistory(history) {
     historyList.innerHTML = '';
+    historyList.style.display = '';
+    // Ajoute le bouton dans le header du panneau historique (Bootstrap .card-header)
+    // Ajout du bouton dans le header du panneau historique, même si le DOM n'est pas prêt
+    function addNewDiscussionBtn() {
+        const historyCard = historyList.closest('.card');
+        if (historyCard) {
+            const header = historyCard.querySelector('.card-header');
+            if (header && !header.querySelector('#new-discussion-btn')) {
+                const newDiscussionBtn = document.createElement('button');
+                newDiscussionBtn.id = 'new-discussion-btn';
+                newDiscussionBtn.textContent = 'Nouvelle discussion';
+                newDiscussionBtn.className = 'btn btn-sm btn-info';
+                newDiscussionBtn.style.marginLeft = '1rem';
+                newDiscussionBtn.onclick = () => {
+                    const discussionId = 'd_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+                    window.history.replaceState({}, '', '?discussion=' + discussionId);
+                    selectedHistoryIdx = null;
+                    recentMessages = [];
+                    historyEl.innerHTML = '';
+                    messageInput.value = '';
+                    messageInput.placeholder = 'Votre message...';
+                };
+                header.appendChild(newDiscussionBtn);
+            }
+        }
+    }
+    addNewDiscussionBtn();
+    // Si le bouton n'est pas là, on réessaie après un court délai (DOM async)
+    setTimeout(addNewDiscussionBtn, 300);
     // Tri décroissant par date
-    history = history.slice().sort((a, b) => {
+    if (!Array.isArray(history)) return;
+    // Utilise la variable globale pour garder la référence
+    window.historyData = history.slice().sort((a, b) => {
         const da = new Date(a.date || a.timestamp || 0);
         const db = new Date(b.date || b.timestamp || 0);
         return db - da;
     });
-    history.forEach((item, idx) => {
-        const li = document.createElement('li');
-        li.style.position = 'relative';
-        // Affiche la date et l'heure
+    window.historyData.forEach((item, idx) => {
+        // Titre = première question user, en ignorant le prompt système et sa première réponse
+        let title = 'Sans titre';
+        if (item.messages && item.messages.length) {
+            let startIdx = 0;
+            if (
+                item.messages.length > 2 &&
+                item.messages[0].role === 'system' &&
+                item.messages[1].role === 'user' &&
+                item.messages[2].role === 'assistant'
+            ) {
+                startIdx = 3;
+            }
+            for (let i = startIdx; i < item.messages.length; i++) {
+                if (item.messages[i].role === 'user') {
+                    title = item.messages[i].content;
+                    break;
+                }
+            }
+        }
         let dateStr = '';
         if (item.date) {
             const d = new Date(item.date);
@@ -133,8 +227,10 @@ function renderHistory(history) {
             const d = new Date(item.timestamp);
             dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString().slice(0, 5);
         }
-        li.textContent = `[${dateStr}] ` + (item.user?.length > 40 ? item.user.slice(0, 40) + '…' : item.user);
-        li.title = item.user;
+        const li = document.createElement('li');
+        li.style.position = 'relative';
+        li.textContent = title.length > 40 ? title.slice(0, 40) + '…' : title;
+        li.title = dateStr || '';
         // Bouton suppression
         const delBtn = document.createElement('button');
         delBtn.textContent = '🗑️';
@@ -154,6 +250,10 @@ function renderHistory(history) {
         // Afficher la discussion complète au clic
         li.onclick = () => {
             selectedHistoryIdx = idx;
+            // Ajoute l'id de discussion à l'URL
+            if (item.id) {
+                window.history.replaceState({}, '', '?discussion=' + item.id);
+            }
             showDiscussion(item);
         };
         historyList.appendChild(li);
@@ -165,12 +265,19 @@ function showDiscussion(item) {
     historyEl.innerHTML = '';
     // Si item contient un tableau de messages, on affiche tout le fil
     if (item.messages && Array.isArray(item.messages)) {
-        item.messages.forEach(msg => {
+        // Masque le prompt système et sa première réponse
+        let startIdx = 0;
+        if (item.messages.length > 2 && item.messages[0].role === 'system' && item.messages[1].role === 'user' && item.messages[2].role === 'assistant') {
+            startIdx = 1; // commence à la première question user
+        }
+        for (let i = startIdx; i < item.messages.length; i++) {
+            const msg = item.messages[i];
+            if (msg.role === 'system') continue; // ne jamais afficher le prompt système
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message ' + (msg.role === 'user' ? 'user' : 'bot');
             msgDiv.innerHTML = `<div class="message-content">${msg.role === 'assistant' ? safeMarkdownParse(msg.content) : escapeHtml(msg.content)}`;
             historyEl.appendChild(msgDiv);
-        });
+        }
     } else {
         // Ancien format : user/bot
         const userMsg = document.createElement('div');
@@ -183,9 +290,6 @@ function showDiscussion(item) {
         historyEl.appendChild(botMsg);
     }
     scrollHistoryToBottom();
-    // Ajout bouton reprendre, visuellement séparé
-    const sep = document.createElement('div');
-    sep.style.height = '2rem';
     sep.style.display = 'flex';
     sep.style.alignItems = 'center';
     sep.style.justifyContent = 'center';
@@ -355,52 +459,41 @@ fileUpload.onchange = (e) => {
     }
 };
 
-async function loadHistory() {
-    const history = await fetchHistory();
-    renderHistory(history);
+// Relie le bouton 'Nouvelle discussion' à la logique JS
+const newDiscussionBtn = document.getElementById('new-discussion-btn');
+// Appeler showChatIfId après chaque navigation ou création de discussion
+function nouvelleDiscussion() {
+    // ...existing code...
+    showChatIfId();
 }
-async function loadPrompts() {
-    const prompts = await fetchPrompts();
-    renderPrompts(prompts);
-}
-function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, function (m) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m];
+if (newDiscussionBtn) {
+    newDiscussionBtn.addEventListener('click', async () => {
+        const discussionId = 'd_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        window.history.replaceState({}, '', '?discussion=' + discussionId);
+        selectedHistoryIdx = null;
+        recentMessages = [];
+        historyEl.innerHTML = '';
+        messageInput.value = '';
+        messageInput.placeholder = 'Votre message...';
+        // Envoie le prompt système à DeepSeek pour initialiser la discussion
+        setStatus('Initialisation de la discussion...');
+        statusIndicator.style.display = 'block';
+        await sendMessage(SYSTEM_PROMPT);
+        setTimeout(() => setStatus(''), 2000);
     });
 }
 
-loadHistory();
-loadPrompts();
-
-// Connexion à DeepSeek au lancement et affichage du retour
-(async function () {
-    const defaultPrompt = SYSTEM_PROMPT;
-    setStatus('Connexion à DeepSeek…');
-    try {
-        const res = await sendMessage(defaultPrompt);
-        console.log('Réponse brute API:', res);
-        historyEl.style.display = 'block';
-        historyEl.innerHTML = '';
-        if (res.reply) {
-            const accueil = res.reply.split('Quel est votre demande')[0].trim();
-            const botMsg = document.createElement('div');
-            botMsg.className = 'message bot';
-            botMsg.innerHTML = `<div class=\"message-content\">${safeMarkdownParse(accueil)}`;
-            historyEl.appendChild(botMsg);
-            setStatus('Connecté à DeepSeek');
-        } else {
-            setStatus('Aucune réponse API');
-            console.error('Réponse API inattendue:', res);
-        }
-        setTimeout(() => setStatus(''), 5000);
-    } catch (err) {
-        setStatus('Erreur de connexion à DeepSeek');
-        setTimeout(() => setStatus(''), 5000);
-        console.error('DeepSeek API error:', err);
-    }
-})();
+function escapeHtml(text) {
+    return text.replace(/[&<>"]|'/g, function (m) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
+    });
+}
 
 function scrollHistoryToBottom() {
-    var historyEl = document.getElementById('history');
     if (historyEl) historyEl.scrollTop = historyEl.scrollHeight;
+}
+
+async function loadHistory() {
+    const history = await fetchHistory();
+    renderHistory(history);
 }
